@@ -24,7 +24,8 @@ from datetime import date, datetime, timedelta
 from typing import Any, Iterator
 from zoneinfo import ZoneInfo
 
-from ...canonical import LAB_METRICS, METRICS, Observation, Source
+from ...canonical import (AGGREGATED, DERIVED, LAB_METRICS, MEASURED, METRICS,
+                          Observation, Source)
 from . import events as ev
 from . import labs as lab
 from . import profile as prof
@@ -38,6 +39,33 @@ RING_VENDOR = "sber_ring"
 RING_RHR_OFFSET = 1.4          # систематическая разница калибровки, не физиология
 RING_RHR_OFFSET_SD = 0.5
 RING_LOG_PROB = 0.45
+# Кольцо появляется в середине наблюдения. До этого дня его строк НЕТ вовсе —
+# это не пропуски, и считать покрытие кольца от начала периода нельзя.
+RING_ACTIVE_FROM_DAY = 56
+
+# Как получено каждое значение. Пара (metric, method_detail) — условие
+# сопоставимости: складывать в один ряд можно только значения с одинаковой
+# парой. Кольцо ниже пишет тот же hr.resting, но со СВОИМ method_detail —
+# и именно поэтому его уровень отличается.
+METHOD_BY_METRIC: dict[str, tuple[str, str]] = {
+    "hr.resting": (MEASURED, "night_min_hr"),
+    "hr.max_daily": (DERIVED, "daily_peak_hr"),
+    "hrv.rmssd": (MEASURED, "rmssd_night_average"),
+    "respiratory.rate": (MEASURED, "night_average"),
+    "body.temp_deviation": (DERIVED, "deviation_from_30d_baseline"),
+    "sleep.duration": (MEASURED, "stage_summary"),
+    "sleep.efficiency": (DERIVED, "time_asleep_over_time_in_bed"),
+    "sleep.onset": (MEASURED, "sleep_boundaries"),
+    "sleep.offset": (MEASURED, "sleep_boundaries"),
+    "activity.steps": (AGGREGATED, "sum_local_day"),
+    "activity.active_energy": (AGGREGATED, "sum_local_day"),
+    "workout.load": (DERIVED, "session_load_v1"),
+    "body.weight": (MEASURED, "scale_sync"),
+    "context.alcohol_units": (MEASURED, "self_report"),
+    "subjective.energy": (MEASURED, "self_report"),
+}
+LAB_METHOD = (MEASURED, "lab_assay")
+RING_RHR_METHOD = (MEASURED, "ring_night_min_hr")
 
 # --- P-02 · связка пульс↔вариабельность --------------------------------------
 # Общее скрытое состояние вегетативного тонуса: AR(1), стационарная дисперсия 1.
@@ -348,6 +376,7 @@ class SyntheticAdapter:
                 # Ночным метрикам ставим интервал сна: он и есть окно измерения.
                 nightly = metric in ("hrv.rmssd", "respiratory.rate", "body.temp_deviation",
                                      "hr.resting", "sleep.duration", "sleep.efficiency")
+                method, method_detail = METHOD_BY_METRIC[metric]
                 out.append(Observation(
                     subject_id=cfg.subject_id,
                     metric=metric,
@@ -355,6 +384,8 @@ class SyntheticAdapter:
                     effective_date=rec.day_date,
                     timezone=rec.timezone,
                     source=device_source,
+                    method=method,
+                    method_detail=method_detail,
                     effective_start=rec.sleep_start if nightly else None,
                     effective_end=rec.sleep_end if nightly else None,
                     confidence=0.93 if nightly else None,
@@ -363,7 +394,9 @@ class SyntheticAdapter:
             # P-10: второй вендор за тот же день. Ключ дедупликации включает
             # вендора, поэтому это не дубль, а именно тот конфликт, ради которого
             # в формате есть приоритет источников (решение 6).
-            if not wearable_missing and rng_ring.random() < RING_LOG_PROB:
+            if (rec.day >= RING_ACTIVE_FROM_DAY
+                    and not wearable_missing
+                    and rng_ring.random() < RING_LOG_PROB):
                 out.append(Observation(
                     subject_id=cfg.subject_id,
                     metric="hr.resting",
@@ -373,6 +406,8 @@ class SyntheticAdapter:
                     effective_date=rec.day_date,
                     timezone=rec.timezone,
                     source=ring_source,
+                    method=RING_RHR_METHOD[0],
+                    method_detail=RING_RHR_METHOD[1],
                     confidence=0.88,
                 ))
 
@@ -386,6 +421,8 @@ class SyntheticAdapter:
                         effective_date=rec.day_date,
                         timezone=rec.timezone,
                         source=lab_source,
+                        method=LAB_METHOD[0],
+                        method_detail=LAB_METHOD[1],
                         confidence=0.99,
                     ))
 
@@ -395,8 +432,20 @@ class SyntheticAdapter:
     # ------------------------------------------------------------------
     def _manifest(self, cfg, base, dates, observations) -> dict[str, Any]:
         counts: dict[str, int] = {}
+        # Диапазон, в котором источник вообще существовал. Без него покрытие
+        # считается от начала периода и врёт про любой источник, подключённый
+        # позже: отсутствие строк до подключения — это не пропуски.
+        spans: dict[str, list[date]] = {}
+        methods: dict[str, set[tuple[str, str]]] = {}
         for obs in observations:
             counts[obs.metric] = counts.get(obs.metric, 0) + 1
+            vendor = obs.source.vendor
+            if vendor in spans:
+                spans[vendor][0] = min(spans[vendor][0], obs.effective_date)
+                spans[vendor][1] = max(spans[vendor][1], obs.effective_date)
+            else:
+                spans[vendor] = [obs.effective_date, obs.effective_date]
+            methods.setdefault(obs.metric, set()).add((obs.method, obs.method_detail))
         n = cfg.total_days
         return {
             "schema_version": "1.0",
@@ -419,12 +468,22 @@ class SyntheticAdapter:
                 "weeks": cfg.weeks,
             },
             "generator": {"name": "synth", "version": ADAPTER_VERSION, "seed": cfg.seed},
+            "sources": [
+                {
+                    "vendor": vendor,
+                    "active_from": span[0].isoformat(),
+                    "active_to": span[1].isoformat(),
+                    "active_days": (span[1] - span[0]).days + 1,
+                }
+                for vendor, span in sorted(spans.items())
+            ],
             "metrics": [
                 {
                     "metric": m,
                     "unit": METRICS[m].unit,
                     "count": counts[m],
                     "coverage": round(counts[m] / n, 4),
+                    "methods": sorted(f"{meth}:{detail}" for meth, detail in methods[m]),
                 }
                 for m in sorted(counts)
             ],

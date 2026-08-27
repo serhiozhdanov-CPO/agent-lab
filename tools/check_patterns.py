@@ -122,6 +122,7 @@ class Dataset:
         self.series: dict[str, Series] = {}
         self.by_vendor: dict[str, dict[str, Series]] = {}
         self.timezones: dict[int, str] = {}
+        self.methods: dict[str, set[tuple[str, str]]] = {}
         for rec in read_jsonl(os.path.join(directory, "observations.jsonl")):
             day = (date.fromisoformat(rec["effective_date"]) - self.start).days
             vendor = rec["source"]["vendor"]
@@ -129,6 +130,8 @@ class Dataset:
             if vendor in PRIMARY_VENDORS:
                 self.series.setdefault(rec["metric"], {})[day] = rec["value"]
             self.timezones.setdefault(day, rec["timezone"])
+            self.methods.setdefault(rec["metric"], set()).add(
+                (rec["method"], rec["method_detail"]))
 
     def s(self, metric: str) -> Series:
         return self.series.get(metric, {})
@@ -537,7 +540,17 @@ def check_p10(ds: Dataset) -> list[Result]:
                 share >= 0.10,
                 f"{hits} из {windows} = {share * 100:.0f} % при номинальных 5 %"))
 
-    # Расхождение вендоров — разница калибровки, а не событие режима.
+    # NC3. Механизма «шаги → вариабельность» в генераторе нет ни прямого, ни
+    # через промежуточные величины. Конфаундеры (день недели, окна событий)
+    # тянут корреляцию в разные стороны и во многом гасят друг друга, поэтому
+    # она мала и неустойчива. Любой содержательный вывод о влиянии активности
+    # на вариабельность на этих данных — ложное срабатывание.
+    xs, ys = paired(ds.s("activity.steps"), ds.log_rmssd())
+    r_steps = pearson(xs, ys)
+    out.append((f"связь шагов и вариабельности отсутствует: |r| < 0.25 (n={len(xs)})",
+                abs(r_steps) < 0.25, f"r = {r_steps:+.3f}, механизма в генераторе нет"))
+
+    # NC2. Расхождение вендоров — разница калибровки, а не событие режима.
     primary = ds.by_vendor.get("hr.resting", {}).get("synthetic", {})
     ring = ds.by_vendor.get("hr.resting", {}).get("sber_ring", {})
     days = sorted(set(primary) & set(ring))
@@ -546,11 +559,54 @@ def check_p10(ds: Dataset) -> list[Result]:
     out.append((f"кольцо систематически выше на 0.8–2.0 уд/мин (n={len(days)})",
                 0.8 <= offset <= 2.0, f"{offset:+.2f} уд/мин"))
 
+    # Кольцо подключено в середине наблюдения. Отсутствие его строк до этого
+    # дня — НЕ пропуски, и покрытие, посчитанное от начала периода, врёт вдвое.
+    first = min(ring) if ring else ds.days
+    from_start = len(ring) / ds.days
+    from_join = len(ring) / (ds.days - first) if first < ds.days else 0.0
+    out.append((
+        "покрытие кольца считается от подключения, а не от начала периода",
+        from_start < 0.30 <= from_join <= 0.60,
+        f"подключено с дня {first}: от начала {from_start:.2f}, от подключения {from_join:.2f}",
+    ))
+
+    # Значения обоих источников несопоставимы напрямую — и формат это говорит:
+    # у них разный method_detail (решение 2 канонического формата).
+    details = {d for _, d in ds.methods.get("hr.resting", set())}
+    out.append((
+        "у двух источников пульса разный method_detail — сравнивать уровни нельзя",
+        len(details) == 2, f"method_detail: {sorted(details)}"))
+
     drift_r = pearson([float(d) for d in days], diffs)
-    # Порог 0.4: пар около сорока, стандартная ошибка корреляции ≈ 0.16,
-    # поэтому меньшее значение неотличимо от полного отсутствия дрейфа.
-    out.append(("расхождение вендоров постоянно во времени: |r| с номером дня < 0.4",
-                abs(drift_r) < 0.4, f"r = {drift_r:+.3f}"))
+    # Порог 0.55: после переноса кольца на день 56 пар осталось около двадцати,
+    # стандартная ошибка корреляции ≈ 0.24, и меньшее значение неотличимо от
+    # полного отсутствия дрейфа.
+    out.append(("расхождение вендоров постоянно во времени: |r| с номером дня < 0.55",
+                abs(drift_r) < 0.55, f"r = {drift_r:+.3f} по {len(days)} парам"))
+    return out
+
+
+def check_p11(ds: Dataset) -> list[Result]:
+    """Хвост восстановления после болезни попадает в разрыв данных."""
+    recovery = range(66, 76)
+    gap = [71, 72, 73]
+    rhr = ds.s("hr.resting")
+    out: list[Result] = []
+
+    inside = all(d in recovery for d in gap)
+    out.append(("разрыв данных 71–73 целиком внутри окна восстановления 66–75",
+                inside, f"окно {recovery.start}–{recovery.stop - 1}, разрыв {gap}"))
+
+    observed = sorted(d for d in recovery if d in rhr)
+    out.append((f"наблюдается не более 7 дней восстановления из 10",
+                len(observed) <= 7, f"наблюдены дни {observed}"))
+
+    # Утверждения о том, НАСКОЛЬКО просел остаток внутри разрыва, здесь нет
+    # намеренно. По конструкции больше половины оставшегося спада приходится
+    # на непронаблюдённые дни, но в наблюдаемых данных этот перепад — разность
+    # двух суточных значений с разбросом 1.5 уд/мин каждое, и его знак от seed
+    # к seed неустойчив. Ровно поэтому форма кривой внутри дыры ничем не задана:
+    # это и есть содержание паттерна, а не то, что можно измерить.
     return out
 
 
@@ -565,6 +621,7 @@ CHECKS = [
     ("P-08", "Порог различимости", check_p08),
     ("P-09", "Смена часового пояса в поездке", check_p09),
     ("P-10", "Негативные контроли", check_p10),
+    ("P-11", "Ненаблюдаемый хвост события", check_p11),
 ]
 
 

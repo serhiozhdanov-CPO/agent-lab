@@ -21,6 +21,14 @@ POINT = "point"
 INTERVAL = "interval"
 AGGREGATIONS = (DAILY, POINT, INTERVAL)
 
+# Как получено значение. Это не метаданные «на всякий случай»: вместе с
+# method_detail пара задаёт условие сопоставимости (решение 2 формата).
+MEASURED = "measured"      # прибор измерил напрямую
+DERIVED = "derived"        # вендор вычислил из своих сырых данных
+AGGREGATED = "aggregated"  # свёртка за период (сумма шагов за сутки)
+IMPUTED = "imputed"        # восстановлено, а не измерено
+METHODS = (MEASURED, DERIVED, AGGREGATED, IMPUTED)
+
 
 @dataclass(frozen=True)
 class MetricSpec:
@@ -39,7 +47,11 @@ METRICS: dict[str, MetricSpec] = {
     # Сердечный ритм и вегетатика
     "hr.resting": MetricSpec("bpm", DAILY, 25, 130, "пульс покоя за сутки"),
     "hr.max_daily": MetricSpec("bpm", DAILY, 60, 230, "максимальный пульс за сутки"),
-    "hrv.rmssd": MetricSpec("ms", DAILY, 3, 300, "вариабельность RMSSD за ночь"),
+    # RMSSD и SDNN — РАЗНЫЕ метрики, а не одна от разных источников: разная
+    # математика, разное время суток, значения отличаются в разы. Складывать
+    # их в один ряд нельзя, и словарь этого просто не позволяет.
+    "hrv.rmssd": MetricSpec("ms", DAILY, 3, 300, "вариабельность RMSSD"),
+    "hrv.sdnn": MetricSpec("ms", DAILY, 3, 400, "вариабельность SDNN"),
     "respiratory.rate": MetricSpec("brpm", DAILY, 5, 40, "частота дыхания во сне"),
     # Сон
     "sleep.duration": MetricSpec("min", DAILY, 0, 1080, "фактическое время сна"),
@@ -86,7 +98,8 @@ WEARABLE_METRICS = (
 # Слой приёма его не применяет — он лишь предлагает потребителю опору.
 VENDOR_PRECEDENCE: dict[str, tuple[str, ...]] = {
     "hr.resting": ("whoop", "sber_ring", "apple_health"),
-    "hrv.rmssd": ("whoop", "sber_ring", "apple_health"),
+    "hrv.rmssd": ("whoop", "sber_ring"),
+    "hrv.sdnn": ("apple_health",),
     "activity.steps": ("apple_health", "sber_ring", "whoop"),
 }
 
@@ -114,11 +127,21 @@ class Observation:
     effective_date: date
     timezone: str
     source: Source
+    method: str = MEASURED
+    method_detail: str = ""
     effective_start: datetime | None = None
     effective_end: datetime | None = None
     confidence: float | None = None
-    imputed: bool = False
     schema_version: str = SCHEMA_VERSION
+
+    @property
+    def imputed(self) -> bool:
+        return self.method == IMPUTED
+
+    @property
+    def comparability_key(self) -> tuple[str, str]:
+        """Сравнивать абсолютные значения можно только внутри одной такой пары."""
+        return (self.metric, self.method_detail)
 
     @property
     def unit(self) -> str:
@@ -138,6 +161,8 @@ class Observation:
             "metric": self.metric,
             "value": self.value,
             "unit": self.unit,
+            "method": self.method,
+            "method_detail": self.method_detail,
             "effective_date": self.effective_date.isoformat(),
             "timezone": self.timezone,
             "aggregation": self.aggregation,
@@ -169,6 +194,7 @@ def validate_record(rec: dict[str, Any], line_no: int | None = None) -> list[str
         problems.append(where + msg)
 
     for key in ("schema_version", "subject_id", "metric", "value", "unit",
+                "method", "method_detail",
                 "effective_date", "timezone", "aggregation", "source", "quality"):
         if key not in rec:
             bad(f"нет обязательного поля {key!r}")
@@ -188,6 +214,11 @@ def validate_record(rec: dict[str, Any], line_no: int | None = None) -> list[str
         bad(f"{metric}: единица {rec['unit']!r}, каноническая {spec.unit!r}")
     if rec["aggregation"] != spec.aggregation:
         bad(f"{metric}: агрегация {rec['aggregation']!r}, ожидалась {spec.aggregation!r}")
+
+    if rec["method"] not in METHODS:
+        bad(f"{metric}: method {rec['method']!r} не из {METHODS}")
+    if not isinstance(rec["method_detail"], str) or not rec["method_detail"]:
+        bad(f"{metric}: method_detail пуст — без него значение не с чем сравнивать")
 
     value = rec["value"]
     if value is None:

@@ -7,6 +7,9 @@
 Только стандартная библиотека. Детерминирован по --seed.
 
     python3 health-synth/generate.py --age 38 --seed 42 --self-check
+
+Результат по умолчанию пишется в out/ (в git не попадает). Эталонный прогон
+на этих же параметрах закоммичен в sample-run/.
 """
 
 from __future__ import annotations

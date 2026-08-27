@@ -1,0 +1,405 @@
+{
+  "_warning": "Это эталонные ответы. Не показывайте этот файл агенту, который анализирует records.csv — иначе эксперимент ничего не измеряет.",
+  "schema_version": "1.0",
+  "params": {
+    "age": 38,
+    "seed": 42,
+    "start_date": "2026-01-05",
+    "weeks": 16,
+    "total_days": 112,
+    "end_date": "2026-04-26",
+    "home_tz": "+03:00"
+  },
+  "baselines_from_age": {
+    "hr_resting_bpm": 51.24,
+    "hrv_rmssd_ms": 44.84,
+    "sleep_need_min": 471.4,
+    "max_hr_bpm": 181.4,
+    "respiratory_rate_brpm": 13.96,
+    "sleep_onset_base_min": -45.0
+  },
+  "patterns": {
+    "P1_baseline": {
+      "days": [
+        1,
+        21
+      ],
+      "from": "2026-01-05",
+      "to": "2026-01-25"
+    },
+    "P2_trip": {
+      "days": [
+        29,
+        34
+      ],
+      "from": "2026-02-02",
+      "to": "2026-02-07",
+      "tz_from": "+03:00",
+      "tz_to": "+08:00",
+      "return_day": 35,
+      "return_date": "2026-02-08",
+      "tail": {
+        "days": [
+          36,
+          39
+        ],
+        "from": "2026-02-09",
+        "to": "2026-02-12"
+      }
+    },
+    "P3_steady": {
+      "days": [
+        50,
+        70
+      ],
+      "from": "2026-02-23",
+      "to": "2026-03-15"
+    },
+    "P4_binge": {
+      "days": [
+        81,
+        84
+      ],
+      "from": "2026-03-26",
+      "to": "2026-03-29",
+      "tail": {
+        "days": [
+          85,
+          90
+        ],
+        "from": "2026-03-30",
+        "to": "2026-04-04"
+      },
+      "recovery_days_rhr": 2,
+      "recovery_days_hrv": 6
+    },
+    "P5_lag1_coupling": {
+      "lag_days": 1,
+      "hrv_pct_per_hour_late": -8.5,
+      "rhr_bpm_per_hour_late": 2.2,
+      "exclude_windows": [
+        [
+          29,
+          34
+        ],
+        [
+          36,
+          39
+        ],
+        [
+          81,
+          84
+        ],
+        [
+          85,
+          90
+        ]
+      ]
+    },
+    "P6a_real_trend": {
+      "metric": "hr_resting",
+      "total_change_bpm": -3.0,
+      "driver": "activity_load",
+      "starts_day": 36
+    },
+    "P6b_decoy_trend": {
+      "metric": "steps",
+      "source": "apple_health",
+      "cause": "двойной учёт при зеркалировании WHOOP в Apple Health",
+      "days": [
+        36,
+        70
+      ],
+      "from": "2026-02-09",
+      "to": "2026-03-15",
+      "max_inflation": 0.3,
+      "control_source": "sber_ring"
+    },
+    "P7_missingness": {
+      "battery_dead": {
+        "days": [
+          44,
+          48
+        ],
+        "from": "2026-02-17",
+        "to": "2026-02-21"
+      },
+      "forced_not_worn_during_binge": [
+        "2026-03-27",
+        "2026-03-29"
+      ],
+      "mechanism": "MNAR — вероятность пропуска растёт в дни срыва",
+      "log": {
+        "battery_dead": [
+          "2026-02-17",
+          "2026-02-18",
+          "2026-02-19",
+          "2026-02-20",
+          "2026-02-21"
+        ],
+        "not_worn": [
+          "2026-03-27",
+          "2026-03-29",
+          "2026-04-04",
+          "2026-04-15"
+        ],
+        "partial": [
+          "2026-01-26",
+          "2026-02-11",
+          "2026-04-09",
+          "2026-04-12"
+        ]
+      }
+    }
+  },
+  "sources": {
+    "whoop_window": {
+      "days": [
+        36,
+        70
+      ],
+      "from": "2026-02-09",
+      "to": "2026-03-15"
+    },
+    "whoop_bias_vs_ring": {
+      "hrv_rmssd_mult": 1.06,
+      "hr_resting_add_bpm": -1.0,
+      "sleep_duration_add_min": 12.0
+    }
+  },
+  "lab_points": [
+    {
+      "day": 3,
+      "date": "2026-01-07",
+      "panel": [
+        "hs_crp",
+        "ferritin",
+        "vitamin_d_25oh",
+        "hba1c",
+        "tsh"
+      ]
+    },
+    {
+      "day": 26,
+      "date": "2026-01-30",
+      "panel": [
+        "hs_crp",
+        "vitamin_d_25oh",
+        "hba1c",
+        "tsh"
+      ]
+    },
+    {
+      "day": 27,
+      "date": "2026-01-31",
+      "panel": [
+        "ferritin",
+        "cortisol_morning"
+      ]
+    },
+    {
+      "day": 61,
+      "date": "2026-03-06",
+      "panel": [
+        "hs_crp",
+        "ferritin",
+        "vitamin_d_25oh",
+        "hba1c",
+        "tsh",
+        "cortisol_morning"
+      ]
+    },
+    {
+      "day": 88,
+      "date": "2026-04-02",
+      "panel": [
+        "hs_crp",
+        "ferritin",
+        "vitamin_d_25oh",
+        "hba1c",
+        "tsh",
+        "cortisol_morning"
+      ]
+    },
+    {
+      "day": 110,
+      "date": "2026-04-24",
+      "panel": [
+        "hs_crp",
+        "ferritin",
+        "vitamin_d_25oh",
+        "hba1c",
+        "tsh",
+        "cortisol_morning"
+      ]
+    }
+  ],
+  "counts": {
+    "records_total": 1661,
+    "by_metric": {
+      "active_energy": 112,
+      "activity_load": 138,
+      "body_temp_delta": 99,
+      "cortisol_morning": 4,
+      "ferritin": 5,
+      "hba1c": 5,
+      "hr_resting": 134,
+      "hrv_rmssd": 134,
+      "hs_crp": 5,
+      "respiratory_rate": 99,
+      "sleep_deep": 99,
+      "sleep_duration": 163,
+      "sleep_efficiency": 134,
+      "sleep_onset": 99,
+      "sleep_rem": 99,
+      "steps": 215,
+      "tsh": 5,
+      "vitamin_d_25oh": 5,
+      "wear_hours": 107
+    },
+    "by_source": {
+      "apple_health": 253,
+      "lab": 29,
+      "sber_ring": 1204,
+      "whoop": 175
+    }
+  },
+  "self_check": {
+    "checks": [
+      {
+        "name": "P1: низкая вариативность HRV в базовом периоде",
+        "passed": true,
+        "detail": "CV = 0.071, порог 0.13"
+      },
+      {
+        "name": "P1: пульс покоя стабилен",
+        "passed": true,
+        "detail": "SD = 2.01 bpm, порог 3.4"
+      },
+      {
+        "name": "P2: tz_offset меняется на днях 29 и 35",
+        "passed": true,
+        "detail": "день 28 +03:00, день 29 +08:00, день 35 +03:00"
+      },
+      {
+        "name": "P2: провал HRV на выезде не менее 13%",
+        "passed": true,
+        "detail": "-26.6%"
+      },
+      {
+        "name": "P2: возврат на запад легче, чем выезд на восток",
+        "passed": true,
+        "detail": "выезд -26.6%, возврат -14.6%"
+      },
+      {
+        "name": "P3: самое стабильное трёхнедельное окно совпадает с днями 50-70",
+        "passed": true,
+        "detail": "найдено окно с дня 50, пересечение 21 из 21 дня, SD отхода ко сну 18.0 мин"
+      },
+      {
+        "name": "P3: не менее 19 ночей из 21 длиннее 7 часов",
+        "passed": true,
+        "detail": "21 из 21"
+      },
+      {
+        "name": "P4: HRV падает не менее чем на 30%",
+        "passed": true,
+        "detail": "-44.8%"
+      },
+      {
+        "name": "P4: пульс покоя растёт не менее чем на 5 bpm",
+        "passed": true,
+        "detail": "+12.2 bpm"
+      },
+      {
+        "name": "P4: пульс покоя восстанавливается заметно быстрее HRV",
+        "passed": true,
+        "detail": "к дню 87 отыграно: пульс покоя 102%, HRV 41% от глубины срыва"
+      },
+      {
+        "name": "P4: HRV на вторые-третьи сутки ещё не восстановлен",
+        "passed": true,
+        "detail": "дни 85-87: 74% от базы"
+      },
+      {
+        "name": "P4: восстановление HRV продолжается на второй неделе",
+        "passed": true,
+        "detail": "дни 85-87 74% -> дни 88-93 92%"
+      },
+      {
+        "name": "P5: корреляция lag-1 в диапазоне -0.85..-0.30",
+        "passed": true,
+        "detail": "r = -0.614 по 74 дням"
+      },
+      {
+        "name": "P5: lag-1 сильнее lag-0",
+        "passed": true,
+        "detail": "lag-1 r = -0.614, lag-0 r = -0.087"
+      },
+      {
+        "name": "P5: наклон близок к заложенному",
+        "passed": true,
+        "detail": "-8.28% на час, заложено -8.5%"
+      },
+      {
+        "name": "P6a: пульс покоя снижается за период",
+        "passed": true,
+        "detail": "-4.01 bpm за 112 дней, заложено -3.0"
+      },
+      {
+        "name": "P6b: шаги Apple завышены относительно кольца в окне WHOOP",
+        "passed": true,
+        "detail": "отношение 1.205"
+      },
+      {
+        "name": "P6b: ложный тренд обрывается ступенькой после дня 70",
+        "passed": true,
+        "detail": "Apple/кольцо: в окне 1.205, после 1.037"
+      },
+      {
+        "name": "P7: пятидневный блок без единой строки от кольца",
+        "passed": true,
+        "detail": "0 строк"
+      },
+      {
+        "name": "P7: две ночи срыва без ночных метрик",
+        "passed": true,
+        "detail": "2 ночей: 2026-03-27, 2026-03-29"
+      },
+      {
+        "name": "P7: у пропущенных ночей срыва есть wear_hours",
+        "passed": true,
+        "detail": "пропуск объясним через wear_hours"
+      }
+    ],
+    "summary": {
+      "passed": 21,
+      "total": 21,
+      "measured": {
+        "p1_hrv_cv": 0.0707,
+        "hrv_baseline_ms": 45.67,
+        "rhr_baseline_bpm": 51.86,
+        "p2_hrv_drop_outbound_pct": -26.6,
+        "p2_hrv_drop_inbound_pct": -14.6,
+        "p3_best_window_start_day": 50,
+        "p3_onset_sd_min": 18.04,
+        "p4_hrv_drop_pct": -44.8,
+        "p4_rhr_rise_bpm": 12.2,
+        "p4_local_hrv_base_ms": 45.3,
+        "p4_local_rhr_base_bpm": 48.8,
+        "p4_hrv_pct_of_base_d85_87": 73.6,
+        "p4_hrv_pct_of_base_d88_90": 90.5,
+        "p4_hrv_pct_of_base_d88_93": 91.8,
+        "p4_rhr_delta_d86_87": -0.3,
+        "p4_recovered_by_d87_rhr_pct": 102.5,
+        "p4_recovered_by_d87_hrv_pct": 41.1,
+        "p5_r_lag1": -0.6138,
+        "p5_r_lag0": -0.0872,
+        "p5_slope_pct_per_hour": -8.283,
+        "p6a_rhr_total_drift_bpm": -4.013,
+        "p6b_apple_over_ring_ratio_in_window": 1.2054,
+        "p6b_apple_over_ring_ratio_after": 1.037
+      }
+    }
+  }
+}

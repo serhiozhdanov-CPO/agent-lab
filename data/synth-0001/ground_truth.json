@@ -1,0 +1,206 @@
+{
+  "note": "Ключ ответов для оценки аналитики. Аналитика не должна его читать.",
+  "patterns": [
+    {
+      "id": "P-01",
+      "late_night_wake_days": [
+        5,
+        6
+      ],
+      "name": "Недельный ритм и социальный джетлаг",
+      "rhr_by_weekday_mon_to_sun": [
+        3.0,
+        0.8,
+        0.0,
+        0.0,
+        0.0,
+        0.5,
+        1.0
+      ],
+      "sleep_duration_weekend_shift_min": 25.0,
+      "sleep_efficiency_weekend_shift_pp": -2.0,
+      "sleep_onset_weekend_shift_min": 55.0
+    },
+    {
+      "age": 38.0,
+      "autonomic_loadings": {
+        "hr.resting": 1.8,
+        "ln(hrv.rmssd)": -0.22
+      },
+      "expected_rhr_for_age": 60.56,
+      "expected_rmssd_for_age": 47.75,
+      "id": "P-02",
+      "name": "Возрастные базовые линии и связка пульс↔вариабельность",
+      "subject_rhr_baseline": 61.27,
+      "subject_rmssd_baseline": 47.44
+    },
+    {
+      "evenings": [
+        {
+          "date": "2026-01-10",
+          "day": 5,
+          "units": 5.0
+        },
+        {
+          "date": "2026-01-24",
+          "day": 19,
+          "units": 5.5
+        },
+        {
+          "date": "2026-02-06",
+          "day": 32,
+          "units": 5.5
+        },
+        {
+          "date": "2026-02-11",
+          "day": 37,
+          "units": 3.0
+        },
+        {
+          "date": "2026-02-13",
+          "day": 39,
+          "units": 3.5
+        },
+        {
+          "date": "2026-02-23",
+          "day": 49,
+          "units": 6.0
+        },
+        {
+          "date": "2026-03-02",
+          "day": 56,
+          "units": 3.0
+        },
+        {
+          "date": "2026-03-06",
+          "day": 60,
+          "units": 3.0
+        },
+        {
+          "date": "2026-04-03",
+          "day": 88,
+          "units": 5.0
+        },
+        {
+          "date": "2026-04-07",
+          "day": 92,
+          "units": 2.5
+        },
+        {
+          "date": "2026-04-24",
+          "day": 109,
+          "units": 6.0
+        }
+      ],
+      "id": "P-03",
+      "lag_days": 1,
+      "name": "Алкогольные вечера: лаговый след"
+    },
+    {
+      "acute_dates": [
+        "2026-03-08",
+        "2026-03-09",
+        "2026-03-10",
+        "2026-03-11"
+      ],
+      "acute_days": [
+        62,
+        63,
+        64,
+        65
+      ],
+      "id": "P-04",
+      "name": "Окно острой болезни",
+      "overshoot_days": [
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82
+      ],
+      "peak_day": 63,
+      "peak_hr_delta": 12.0,
+      "recovery_tau_days": 3.5
+    },
+    {
+      "block_days": [
+        35,
+        55
+      ],
+      "fitness_tau_days": 16.0,
+      "id": "P-05",
+      "load_multiplier": 0.3,
+      "name": "Блок детренированности",
+      "worst_fitness_day": 53
+    },
+    {
+      "id": "P-06",
+      "max_debt_hours": 9.82,
+      "name": "Накопленный недосып",
+      "same_day_duration_coefficient": 0.0,
+      "short_sleep_blocks": [
+        [
+          21,
+          27
+        ],
+        [
+          84,
+          97
+        ]
+      ],
+      "window_days": 7
+    },
+    {
+      "confounded_days": [
+        63
+      ],
+      "draw_dates": [
+        "2026-01-08",
+        "2026-01-29",
+        "2026-02-25",
+        "2026-03-09",
+        "2026-04-03",
+        "2026-04-24"
+      ],
+      "draw_days": [
+        3,
+        24,
+        51,
+        63,
+        88,
+        109
+      ],
+      "ferritin_true_at_draws": [
+        80.9,
+        73.1,
+        63.2,
+        58.7,
+        49.5,
+        41.7
+      ],
+      "flat_markers": [
+        "lab.hba1c",
+        "lab.tsh"
+      ],
+      "id": "P-07",
+      "name": "Связность лабораторного ряда и искажённый замер"
+    },
+    {
+      "forced_gap_days": [
+        71,
+        72,
+        73
+      ],
+      "id": "P-08",
+      "mechanism": "MCAR",
+      "name": "Порог различимости",
+      "resolution_threshold_bpm": 1.5,
+      "wearable_drop_prob": 0.07
+    }
+  ],
+  "schema_version": "1.0",
+  "source_document": "expected-patterns.md",
+  "subject_id": "synth-0001"
+}

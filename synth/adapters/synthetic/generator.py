@@ -33,6 +33,11 @@ from . import rhythm as rh
 ADAPTER_VERSION = "0.1.0"
 VENDOR = "synthetic"
 LAB_VENDOR = "lab"
+# Второй вендор для P-10: кольцо присылает свой пульс покоя за те же дни.
+RING_VENDOR = "sber_ring"
+RING_RHR_OFFSET = 1.4          # систематическая разница калибровки, не физиология
+RING_RHR_OFFSET_SD = 0.5
+RING_LOG_PROB = 0.45
 
 # --- P-02 · связка пульс↔вариабельность --------------------------------------
 # Общее скрытое состояние вегетативного тонуса: AR(1), стационарная дисперсия 1.
@@ -40,6 +45,11 @@ AUTONOMIC_PHI = 0.55
 AUTONOMIC_RHR_LOADING = 1.8
 AUTONOMIC_LOG_RMSSD_LOADING = -0.22
 AUTONOMIC_RESP_LOADING = 0.25
+
+# Шум в шагах автокоррелирован: активность держится сериями, и это не
+# украшение. Именно из-за него в спокойных пятидневках сами собой заводятся
+# формально значимые «тренды» — то, на чём стоит негативный контроль P-10.
+STEPS_AR_PHI = 0.55
 
 # --- P-08 · шум --------------------------------------------------------------
 # Физиологическая изменчивость и приборный шум разделены: первая — свойство
@@ -98,6 +108,7 @@ class DayRecord:
     day_date: date
     weekday: int
     values: dict[str, float] = field(default_factory=dict)
+    timezone: str = ""
     sleep_start: datetime | None = None
     sleep_end: datetime | None = None
     debt_hours: float = 0.0
@@ -145,6 +156,7 @@ class SyntheticAdapter:
         rng_energy = _stream(cfg.seed, "energy")
         rng_weight = _stream(cfg.seed, "weight")
         rng_missing = _stream(cfg.seed, "missing")
+        rng_ring = _stream(cfg.seed, "ring")
 
         base = prof.baselines(cfg.age, rng_subject, cfg.weight_kg)
         dates = [cfg.start_date + timedelta(days=d) for d in range(n)]
@@ -158,7 +170,7 @@ class SyntheticAdapter:
         )
         panels = lab.draw_panels(n, rng_labs)
 
-        observations = self._emit(cfg, records, panels, rng_missing, tz)
+        observations = self._emit(cfg, records, panels, rng_missing, rng_ring)
         manifest = self._manifest(cfg, base, dates, observations)
         truth = self._ground_truth(cfg, base, records, panels, alcohol_by_day)
         return observations, manifest, truth
@@ -175,6 +187,8 @@ class SyntheticAdapter:
         # Скрытые состояния.
         z = rng_auto.gauss(0.0, 1.0)
         auto_innovation_sd = math.sqrt(1.0 - AUTONOMIC_PHI ** 2)
+        steps_noise = rng_activity.gauss(0.0, rh.STEPS_SD)
+        steps_innovation_sd = rh.STEPS_SD * math.sqrt(1.0 - STEPS_AR_PHI ** 2)
         alpha = ev.fitness_alpha()
         fitness = sum(rh.WORKOUT_BY_WEEKDAY) / 7.0    # старт с равновесия
         fitness_ref = fitness
@@ -189,11 +203,14 @@ class SyntheticAdapter:
                 .merge(ev.illness_effect(d))
                 .merge(ev.detraining_effect(d))
                 .merge(ev.short_sleep_effect(d, weekday))
+                .merge(ev.travel_effect(d))
             )
+            day_tz_name = ev.travel_timezone(d, cfg.timezone)
+            day_tz = ZoneInfo(day_tz_name)
 
             # --- сон ---------------------------------------------------
             onset_t, duration_t, efficiency_t = rh.sleep_targets(weekday)
-            onset = onset_t + rng_sleep.gauss(0.0, SLEEP_ONSET_SD)
+            onset = onset_t + effect.sleep_onset + rng_sleep.gauss(0.0, SLEEP_ONSET_SD)
             duration = (
                 duration_t
                 + effect.sleep_duration
@@ -247,8 +264,9 @@ class SyntheticAdapter:
             temp_deviation = effect.temp_deviation + rng_device.gauss(0.0, TEMP_SD)
 
             # --- активность --------------------------------------------
-            steps = max(0.0, (rh.steps_target(weekday) + rng_activity.gauss(0.0, rh.STEPS_SD))
-                        * effect.steps_mult)
+            steps_noise = (STEPS_AR_PHI * steps_noise
+                           + rng_activity.gauss(0.0, steps_innovation_sd))
+            steps = max(0.0, (rh.steps_target(weekday) + steps_noise) * effect.steps_mult)
             active_energy = max(0.0,
                 ACTIVE_ENERGY_PER_STEP * steps
                 + ACTIVE_ENERGY_PER_LOAD * load
@@ -269,8 +287,10 @@ class SyntheticAdapter:
             weight += WEIGHT_DRIFT_KG / n + rng_weight.gauss(0.0, WEIGHT_SD) * 0.35
 
             rec = DayRecord(day=d, day_date=dates[d], weekday=weekday, debt_hours=debt,
-                            fitness=fitness)
-            midnight = datetime.combine(dates[d], datetime.min.time(), tzinfo=tz)
+                            fitness=fitness, timezone=day_tz_name)
+            # Полночь МЕСТНАЯ: во время поездки это полночь другого пояса, и
+            # именно от неё отсчитывается sleep.onset.
+            midnight = datetime.combine(dates[d], datetime.min.time(), tzinfo=day_tz)
             rec.sleep_start = midnight + timedelta(minutes=onset)
             rec.sleep_end = midnight + timedelta(minutes=offset)
             rec.values = {
@@ -294,7 +314,7 @@ class SyntheticAdapter:
         return records
 
     # ------------------------------------------------------------------
-    def _emit(self, cfg, records, panels, rng_missing, tz) -> list[Observation]:
+    def _emit(self, cfg, records, panels, rng_missing, rng_ring) -> list[Observation]:
         """Разложить сутки в наблюдения и наложить пропуски.
 
         Пропуск выражается тем, что наблюдение не порождается вовсе — ни нулём,
@@ -302,6 +322,7 @@ class SyntheticAdapter:
         """
         device_source = Source(vendor=VENDOR, adapter_version=ADAPTER_VERSION, device="generator")
         lab_source = Source(vendor=LAB_VENDOR, adapter_version=ADAPTER_VERSION, device="synthetic-lab")
+        ring_source = Source(vendor=RING_VENDOR, adapter_version=ADAPTER_VERSION, device="sber-ring")
         panels_by_day = {p.day: p for p in panels}
         out: list[Observation] = []
 
@@ -332,11 +353,27 @@ class SyntheticAdapter:
                     metric=metric,
                     value=value,
                     effective_date=rec.day_date,
-                    timezone=cfg.timezone,
+                    timezone=rec.timezone,
                     source=device_source,
                     effective_start=rec.sleep_start if nightly else None,
                     effective_end=rec.sleep_end if nightly else None,
                     confidence=0.93 if nightly else None,
+                ))
+
+            # P-10: второй вендор за тот же день. Ключ дедупликации включает
+            # вендора, поэтому это не дубль, а именно тот конфликт, ради которого
+            # в формате есть приоритет источников (решение 6).
+            if not wearable_missing and rng_ring.random() < RING_LOG_PROB:
+                out.append(Observation(
+                    subject_id=cfg.subject_id,
+                    metric="hr.resting",
+                    value=round(rec.values["hr.resting"]
+                                + RING_RHR_OFFSET
+                                + rng_ring.gauss(0.0, RING_RHR_OFFSET_SD), 1),
+                    effective_date=rec.day_date,
+                    timezone=rec.timezone,
+                    source=ring_source,
+                    confidence=0.88,
                 ))
 
             panel = panels_by_day.get(rec.day)
@@ -347,7 +384,7 @@ class SyntheticAdapter:
                         metric=metric,
                         value=value,
                         effective_date=rec.day_date,
-                        timezone=cfg.timezone,
+                        timezone=rec.timezone,
                         source=lab_source,
                         confidence=0.99,
                     ))
@@ -469,6 +506,26 @@ class SyntheticAdapter:
                         round(lab.ferritin_true_at(p.day, n), 1) for p in panels
                     ],
                     "flat_markers": ["lab.hba1c", "lab.tsh"],
+                },
+                {
+                    "id": "P-09", "name": "Смена часового пояса в поездке",
+                    "home_timezone": cfg.timezone,
+                    "away_timezone": ev.TRAVEL_TIMEZONE,
+                    "abroad_days": list(ev.TRAVEL_ABROAD_DAYS),
+                    "abroad_dates": [day_to_date[d] for d in ev.TRAVEL_ABROAD_DAYS],
+                    "return_days": list(ev.TRAVEL_RETURN_DAYS),
+                    "east_profile": list(ev.TRAVEL_EAST_PROFILE),
+                    "west_profile": list(ev.TRAVEL_WEST_PROFILE),
+                    "asymmetry": "перелёт на восток переносится тяжелее возврата на запад",
+                },
+                {
+                    "id": "P-10", "name": "Негативные контроли",
+                    "empty_week_days": list(ev.NEGATIVE_CONTROL_WEEK),
+                    "empty_week_dates": [day_to_date[d] for d in ev.NEGATIVE_CONTROL_WEEK],
+                    "steps_ar_phi": STEPS_AR_PHI,
+                    "second_vendor": RING_VENDOR,
+                    "second_vendor_rhr_offset": RING_RHR_OFFSET,
+                    "second_vendor_is_calibration_not_physiology": True,
                 },
                 {
                     "id": "P-08", "name": "Порог различимости",

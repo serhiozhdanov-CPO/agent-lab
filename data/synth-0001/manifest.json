@@ -42,8 +42,8 @@
       "unit": "bpm"
     },
     {
-      "count": 103,
-      "coverage": 0.9196,
+      "count": 141,
+      "coverage": 1.2589,
       "metric": "hr.resting",
       "unit": "bpm"
     },
@@ -151,5 +151,5 @@
     "timezone": "Europe/Moscow"
   },
   "subject_id": "synth-0001",
-  "total_observations": 1535
+  "total_observations": 1573
 }

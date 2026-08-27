@@ -27,6 +27,15 @@ from synth.canonical import WEARABLE_METRICS, read_jsonl  # noqa: E402
 
 Series = dict[int, float]
 
+# Вендоры, из которых собирается основной ряд для анализа. Остальные доступны
+# через Dataset.by_vendor.
+PRIMARY_VENDORS = {"synthetic", "lab"}
+
+# Окно поездки (P-09): пульс там сдвинут на несколько уд/мин, поэтому из
+# сравнений, где группа — «все остальные дни», оно исключается так же, как
+# окно болезни.
+TRAVEL_WINDOW = range(25, 35)
+
 
 # --------------------------------------------------------------------------
 # Мелкая статистика на stdlib
@@ -69,6 +78,21 @@ def ols(xs: list[float], ys: list[float]) -> tuple[float, float, float]:
     return slope, intercept, r2
 
 
+def slope_t(xs: list[float], ys: list[float]) -> float:
+    """t-статистика наклона МНК — для подсчёта формально значимых «трендов»."""
+    n = len(xs)
+    if n < 3:
+        return 0.0
+    slope, intercept, _ = ols(xs, ys)
+    if math.isnan(slope):
+        return 0.0
+    mx = mean(xs)
+    sxx = sum((x - mx) ** 2 for x in xs)
+    resid = [y - (intercept + slope * x) for x, y in zip(xs, ys)]
+    se = math.sqrt(sum(r * r for r in resid) / (n - 2) / sxx) if sxx else 0.0
+    return slope / se if se else 0.0
+
+
 def rolling_mean(series: Series, day: int, window: int) -> float:
     vals = [series[d] for d in range(day - window + 1, day + 1) if d in series]
     return mean(vals) if len(vals) >= max(2, window // 2) else float("nan")
@@ -91,10 +115,20 @@ class Dataset:
         self.age = self.manifest["subject"]["age"]
         self.sleep_need_min = self.manifest["subject"]["baselines"]["sleep_need_min"]
 
+        # Один и тот же показатель за один день могут прислать разные вендоры —
+        # это законно (см. canonical-format.md, решение 6). Для анализа берём
+        # основной поток, а остальные держим отдельно: сравнение вендоров между
+        # собой — предмет P-10, а не повод усреднять их в одну строку.
         self.series: dict[str, Series] = {}
+        self.by_vendor: dict[str, dict[str, Series]] = {}
+        self.timezones: dict[int, str] = {}
         for rec in read_jsonl(os.path.join(directory, "observations.jsonl")):
             day = (date.fromisoformat(rec["effective_date"]) - self.start).days
-            self.series.setdefault(rec["metric"], {})[day] = rec["value"]
+            vendor = rec["source"]["vendor"]
+            self.by_vendor.setdefault(rec["metric"], {}).setdefault(vendor, {})[day] = rec["value"]
+            if vendor in PRIMARY_VENDORS:
+                self.series.setdefault(rec["metric"], {})[day] = rec["value"]
+            self.timezones.setdefault(day, rec["timezone"])
 
     def s(self, metric: str) -> Series:
         return self.series.get(metric, {})
@@ -113,6 +147,7 @@ class Dataset:
             d for d in range(self.days)
             if self.weekday(d) in (2, 3, 4)
             and not (60 <= d <= 83)
+            and d not in TRAVEL_WINDOW
             and d not in after_alcohol
         }
 
@@ -220,23 +255,27 @@ def check_p03(ds: Dataset) -> list[Result]:
     out: list[Result] = []
 
     def is_rest(d: int) -> bool:
-        return d not in next_days and d not in drink_days and d not in ILLNESS_WINDOW
+        return (d not in next_days and d not in drink_days
+                and d not in ILLNESS_WINDOW and d not in TRAVEL_WINDOW)
 
     rhr = ds.s("hr.resting")
-    after = [v for d, v in rhr.items() if d in next_days and d not in ILLNESS_WINDOW]
+    after = [v for d, v in rhr.items()
+             if d in next_days and d not in ILLNESS_WINDOW and d not in TRAVEL_WINDOW]
     rest = [v for d, v in rhr.items() if is_rest(d)]
     lift = mean(after) - mean(rest)
     out.append((f"пульс покоя на дне D+1 выше на ≥ 4.0 уд/мин (n={len(after)})",
                 lift >= 4.0, f"{lift:+.2f} уд/мин"))
 
-    same = [v for d, v in rhr.items() if d in drink_days and d not in ILLNESS_WINDOW]
+    same = [v for d, v in rhr.items()
+            if d in drink_days and d not in ILLNESS_WINDOW and d not in TRAVEL_WINDOW]
     same_lift = mean(same) - mean(rest)
     # Порог 2.0, а не 1.5: вечера с алкоголем сами по себе смещены к пятнице
     # и субботе, поэтому сравнение с «остальными днями» не идеально чистое.
     out.append(("в день D эффект < 2.0 уд/мин", abs(same_lift) < 2.0, f"{same_lift:+.2f} уд/мин"))
 
     rmssd = ds.s("hrv.rmssd")
-    after_h = mean([v for d, v in rmssd.items() if d in next_days and d not in ILLNESS_WINDOW])
+    after_h = mean([v for d, v in rmssd.items()
+                    if d in next_days and d not in ILLNESS_WINDOW and d not in TRAVEL_WINDOW])
     rest_h = mean([v for d, v in rmssd.items() if is_rest(d)])
     rel = (after_h - rest_h) / rest_h * 100
     out.append(("RMSSD на дне D+1 ниже на ≥ 12 %", rel <= -12.0, f"{rel:+.1f} %"))
@@ -285,8 +324,10 @@ def check_p05(ds: Dataset) -> list[Result]:
     out.append(("нагрузка в днях 35–55 ≤ 50 % от остальных",
                 share <= 0.50, f"{share * 100:.1f} %"))
 
+    # Базовое окно 5–24: дни 25–34 занимает поездка (P-09), и включать их
+    # в «до блока» означало бы поднять базу почти на 2 уд/мин.
     after = mean([v for d, v in rhr.items() if 49 <= d <= 62])
-    before = mean([v for d, v in rhr.items() if 7 <= d <= 34])
+    before = mean([v for d, v in rhr.items() if 5 <= d <= 24])
     lift = after - before
     out.append(("пульс в днях 49–62 выше, чем в 7–34, на ≥ 2.5 уд/мин",
                 lift >= 2.5, f"{lift:+.2f} уд/мин"))
@@ -301,26 +342,27 @@ def check_p05(ds: Dataset) -> list[Result]:
     # окна сдвигают среднее почти на 1 уд/мин и смазывают картину. Аналитик,
     # нашедший P-03, сделал бы то же самое.
     after_alcohol = {d + 1 for d, v in ds.s("context.alcohol_units").items() if v > 0}
-    clean = {d: v for d, v in rhr.items() if d not in after_alcohol}
+    skip = after_alcohol | set(TRAVEL_WINDOW)
+    clean = {d: v for d, v in rhr.items() if d not in skip}
     roll: dict[int, float] = {}
-    for d in range(28, 58):   # верхняя граница такая, чтобы окно не задело болезнь
-        vals = [clean[x] for x in range(d - 4, d + 5) if x in clean]
-        if len(vals) >= 6:
+    for d in range(32, 58):   # верхняя граница такая, чтобы окно не задело болезнь
+        vals = [clean[x] for x in range(d - 5, d + 6) if x in clean]
+        if len(vals) >= 7:
             roll[d] = mean(vals)
     peak = max(roll, key=lambda d: roll[d]) if roll else -1
     out.append((
-        "пик 9-дневного среднего пульса на отрезке 28–57 — не раньше дня 46",
+        "пик 11-дневного среднего пульса на отрезке 32–57 — не раньше дня 46",
         peak >= 46,
         f"пик на дне {peak}, это {peak - 35} дней после начала блока",
     ))
     return out
 
 
-# Окна, свободные от болезни (P-04, дни 62–83) и от отклика на детренированность
-# (P-05, дни 35–62). Обе просадки вариабельности там на порядок больше эффекта
-# долга сна и просто забивают корреляцию — аналитик, нашедший P-04 и P-05,
-# исключил бы эти отрезки ровно так же.
-P06_CLEAN_DAYS = set(range(0, 35)) | set(range(84, 112))
+# Окна, свободные от поездки (P-09, дни 25–34), от отклика на детренированность
+# (P-05, дни 35–62) и от болезни (P-04, дни 62–83). Все три просадки
+# вариабельности там на порядок больше эффекта долга сна и просто забивают
+# корреляцию — аналитик, нашедший эти паттерны, исключил бы отрезки так же.
+P06_CLEAN_DAYS = set(range(0, 25)) | set(range(84, 112))
 
 
 def check_p06(ds: Dataset) -> list[Result]:
@@ -415,7 +457,8 @@ def check_p08(ds: Dataset) -> list[Result]:
                 "чисто" if not leaked else f"протекли: {sorted(set(leaked))}"))
 
     missing = {d for d in range(ds.days) if d not in rhr}
-    calm = {d: v for d, v in rhr.items() if d not in ILLNESS_WINDOW}
+    calm = {d: v for d, v in rhr.items()
+            if d not in ILLNESS_WINDOW and d not in TRAVEL_WINDOW}
     before = [v for d, v in calm.items() if d + 1 in missing]
     delta = abs(mean(before) - mean(list(calm.values()))) if before else 0.0
     # Порог ±2.5, а не ±1.0: дней перед пропуском около восьми, стандартная
@@ -423,6 +466,91 @@ def check_p08(ds: Dataset) -> list[Result]:
     # совместимо со случайными пропусками. Это ровно тот урок, о котором P-08.
     out.append(("пропуски не связаны с исходом: дни перед пропуском в ±2.5 уд/мин",
                 delta <= 2.5, f"отклонение {delta:.2f} уд/мин по {len(before)} дням"))
+    return out
+
+
+def check_p09(ds: Dataset) -> list[Result]:
+    rhr = ds.s("hr.resting")
+    out: list[Result] = []
+
+    home = ds.manifest["subject"]["timezone"]
+    away = sorted(d for d, tz in ds.timezones.items() if tz != home)
+    expected = list(range(25, 30))
+    out.append(("смена пояса видна по данным: дни 25–29 и только они",
+                away == expected,
+                f"дни с другим поясом: {away or '—'}"
+                + (f" ({ds.timezones[away[0]]})" if away else "")))
+
+    baseline = mean([v for d, v in rhr.items() if 5 <= d <= 24])
+    abroad = mean([v for d, v in rhr.items() if d in range(25, 30)])
+    lift = abroad - baseline
+    out.append(("пульс покоя за границей выше базового окна 5–24 на ≥ 3.5 уд/мин",
+                lift >= 3.5, f"{lift:+.2f} уд/мин"))
+
+    # Асимметрия: 3–5-й день после перелёта на восток против тех же дней
+    # после возврата на запад.
+    east_tail = mean([v for d, v in rhr.items() if 27 <= d <= 29]) - baseline
+    west_tail = mean([v for d, v in rhr.items() if 32 <= d <= 34]) - baseline
+    gap = east_tail - west_tail
+    out.append(("восток переносится тяжелее запада: остаточный сдвиг больше на ≥ 2.5 уд/мин",
+                gap >= 2.5,
+                f"восток {east_tail:+.2f}, запад {west_tail:+.2f}, разница {gap:+.2f} уд/мин"))
+
+    rmssd = ds.s("hrv.rmssd")
+    base_h = mean([v for d, v in rmssd.items() if 5 <= d <= 24])
+    away_h = mean([v for d, v in rmssd.items() if d in range(25, 30)])
+    rel = (away_h - base_h) / base_h * 100
+    out.append(("вариабельность за границей ниже на ≥ 10 %", rel <= -10.0, f"{rel:+.1f} %"))
+    return out
+
+
+def check_p10(ds: Dataset) -> list[Result]:
+    out: list[Result] = []
+    week = range(7, 14)
+
+    alcohol = [d for d in week if ds.s("context.alcohol_units").get(d, 0.0) > 0]
+    hot = [d for d in week if ds.s("body.temp_deviation").get(d, 0.0) >= 0.35]
+    quiet_level = median([v for d, v in ds.s("hr.resting").items() if d in ds.quiet_days()])
+    week_level = mean([v for d, v in ds.s("hr.resting").items() if d in week])
+    drift = abs(week_level - quiet_level)
+    out.append((
+        "неделя 7–13 действительно пуста: без алкоголя, без лихорадки, пульс на уровне спокойных дней",
+        not alcohol and not hot and drift < 2.5,
+        f"алкоголь {alcohol or '—'}, температура {hot or '—'}, "
+        f"пульс {week_level:.1f} против {quiet_level:.1f} ({drift:.2f})",
+    ))
+
+    # Шум в шагах автокоррелирован, поэтому короткие «тренды» заводятся сами
+    # собой заметно чаще номинальных 5 %. Любой тренд, найденный в неделе
+    # негативного контроля, — ложное срабатывание, и вот его цена.
+    steps = ds.s("activity.steps")
+    windows = hits = 0
+    for d0 in range(ds.days - 4):
+        days = [d for d in range(d0, d0 + 5) if d in steps]
+        if len(days) < 5:
+            continue
+        windows += 1
+        if abs(slope_t([float(d) for d in days], [steps[d] for d in days])) > 2.0:
+            hits += 1
+    share = hits / windows if windows else 0.0
+    out.append(("формально значимые наклоны шагов возникают в ≥ 10 % пятидневок сами собой",
+                share >= 0.10,
+                f"{hits} из {windows} = {share * 100:.0f} % при номинальных 5 %"))
+
+    # Расхождение вендоров — разница калибровки, а не событие режима.
+    primary = ds.by_vendor.get("hr.resting", {}).get("synthetic", {})
+    ring = ds.by_vendor.get("hr.resting", {}).get("sber_ring", {})
+    days = sorted(set(primary) & set(ring))
+    diffs = [ring[d] - primary[d] for d in days]
+    offset = mean(diffs)
+    out.append((f"кольцо систематически выше на 0.8–2.0 уд/мин (n={len(days)})",
+                0.8 <= offset <= 2.0, f"{offset:+.2f} уд/мин"))
+
+    drift_r = pearson([float(d) for d in days], diffs)
+    # Порог 0.4: пар около сорока, стандартная ошибка корреляции ≈ 0.16,
+    # поэтому меньшее значение неотличимо от полного отсутствия дрейфа.
+    out.append(("расхождение вендоров постоянно во времени: |r| с номером дня < 0.4",
+                abs(drift_r) < 0.4, f"r = {drift_r:+.3f}"))
     return out
 
 
@@ -435,6 +563,8 @@ CHECKS = [
     ("P-06", "Накопленный недосып", check_p06),
     ("P-07", "Связность лабораторного ряда и искажённый замер", check_p07),
     ("P-08", "Порог различимости", check_p08),
+    ("P-09", "Смена часового пояса в поездке", check_p09),
+    ("P-10", "Негативные контроли", check_p10),
 ]
 
 

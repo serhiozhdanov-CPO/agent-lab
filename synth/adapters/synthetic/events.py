@@ -69,8 +69,38 @@ SLEEP_DEBT_RHR_PER_HOUR = 0.35
 # и состоит паттерн: признак нужно сконструировать, а не взять готовым.
 SHORT_SLEEP_MAIN = range(84, 98)      # недели 13–14
 SHORT_SLEEP_MAIN_MINUTES = -55.0      # только в будни
-SHORT_SLEEP_MILD = range(21, 28)      # более ранний, слабый эпизод: даёт долгу разброс
+SHORT_SLEEP_MILD = range(14, 21)      # более ранний, слабый эпизод: даёт долгу разброс
 SHORT_SLEEP_MILD_MINUTES = -35.0
+
+
+# --------------------------------------------------------------------------
+# P-09 · Смена часового пояса в поездке
+# --------------------------------------------------------------------------
+TRAVEL_TIMEZONE = "Asia/Shanghai"          # +5 часов к Europe/Moscow
+TRAVEL_ABROAD_DAYS = range(25, 30)         # 25..29, дни за границей
+TRAVEL_RETURN_DAYS = range(30, 35)         # 30..34, возврат и шлейф
+# Профили интенсивности. Асимметрия здесь и есть паттерн: на восток к пятому дню
+# адаптация ещё не наступила, на запад — почти наступила к третьему.
+TRAVEL_EAST_PROFILE = (0.55, 0.90, 1.00, 0.95, 0.85)
+TRAVEL_WEST_PROFILE = (0.70, 0.35, 0.15, 0.05, 0.02)
+TRAVEL_RHR = 6.5
+TRAVEL_LOG_RMSSD = -0.35                   # ≈ −30 %
+TRAVEL_RESPIRATORY = 0.5
+TRAVEL_TEMP = 0.15
+TRAVEL_SLEEP_EFFICIENCY = -8.0
+TRAVEL_SLEEP_ONSET = 60.0                  # по МЕСТНЫМ часам ложится позже
+TRAVEL_SLEEP_DURATION = -45.0              # тело будит по домашним часам
+TRAVEL_ENERGY = -0.8
+TRAVEL_STEPS_MULT_FLIGHT = 1.55            # дни самих перелётов
+TRAVEL_STEPS_MULT_ABROAD = 1.15
+TRAVEL_FLIGHT_DAYS = (TRAVEL_ABROAD_DAYS.start, TRAVEL_RETURN_DAYS.start)
+
+# --------------------------------------------------------------------------
+# P-10 · Негативные контроли
+# --------------------------------------------------------------------------
+# Неделя, в которую не заложено ничего: ни события, ни дрейфа, ни алкоголя.
+# Любой найденный в ней тренд — ложное срабатывание.
+NEGATIVE_CONTROL_WEEK = range(7, 14)       # дни 7..13
 
 
 @dataclass
@@ -81,6 +111,7 @@ class DayEffect:
     log_rmssd: float = 0.0
     sleep_efficiency: float = 0.0
     sleep_duration: float = 0.0
+    sleep_onset: float = 0.0
     respiratory: float = 0.0
     temp_deviation: float = 0.0
     energy: float = 0.0
@@ -93,6 +124,7 @@ class DayEffect:
             log_rmssd=self.log_rmssd + other.log_rmssd,
             sleep_efficiency=self.sleep_efficiency + other.sleep_efficiency,
             sleep_duration=self.sleep_duration + other.sleep_duration,
+            sleep_onset=self.sleep_onset + other.sleep_onset,
             respiratory=self.respiratory + other.respiratory,
             temp_deviation=self.temp_deviation + other.temp_deviation,
             energy=self.energy + other.energy,
@@ -103,9 +135,22 @@ class DayEffect:
 
 def schedule_alcohol(n_days: int, weekday_of: list[int], rng: random.Random) -> dict[int, float]:
     """Выбрать вечера с алкоголем. Пятница и суббота заметно вероятнее прочих дней."""
-    illness_span = range(ILLNESS_START_DAY - 1, RECOVERY_LAST_DAY + 1)
+    # Окна, в которые вечер с алкоголем не планируется. Причины разные, итог
+    # один: след, попавший в любое из них, пришлось бы выбрасывать из сравнения,
+    # и паттерн терял бы треть наблюдений.
+    #   болезнь и восстановление — больной человек не пьёт;
+    #   поездка — иначе P-03 и P-09 накладываются друг на друга;
+    #   неделя негативного контроля — она обязана остаться пустой (P-10).
+    forbidden = (set(range(ILLNESS_START_DAY - 2, OVERSHOOT_DAYS.stop))
+                 | set(NEGATIVE_CONTROL_WEEK)
+                 | set(TRAVEL_ABROAD_DAYS) | set(TRAVEL_RETURN_DAYS))
+
+    def blocked(d: int) -> bool:
+        # И сам вечер, и день следа обязаны быть вне запретных окон.
+        return d in forbidden or d + 1 in forbidden
+
     weights = [
-        0.0 if d in illness_span
+        0.0 if blocked(d)
         else ALCOHOL_WEEKEND_WEIGHT if weekday_of[d] in (4, 5)
         else 1.0
         for d in range(n_days)
@@ -168,6 +213,42 @@ def illness_effect(day: int) -> DayEffect:
         return DayEffect(rhr=OVERSHOOT_RHR, log_rmssd=OVERSHOOT_LOG_RMSSD, energy=0.4)
 
     return DayEffect()
+
+
+def travel_timezone(day: int, home: str) -> str:
+    """Часовой пояс субъекта на этот день."""
+    return TRAVEL_TIMEZONE if day in TRAVEL_ABROAD_DAYS else home
+
+
+def travel_effect(day: int) -> DayEffect:
+    """Сдвиг пояса на восток, возврат на запад и разная тяжесть того и другого."""
+    if day in TRAVEL_ABROAD_DAYS:
+        intensity = TRAVEL_EAST_PROFILE[day - TRAVEL_ABROAD_DAYS.start]
+        onset_shift = TRAVEL_SLEEP_ONSET
+    elif day in TRAVEL_RETURN_DAYS:
+        intensity = TRAVEL_WEST_PROFILE[day - TRAVEL_RETURN_DAYS.start]
+        onset_shift = -TRAVEL_SLEEP_ONSET * 0.5   # дома тянет спать раньше
+    else:
+        return DayEffect()
+
+    if day in TRAVEL_FLIGHT_DAYS:
+        steps_mult = TRAVEL_STEPS_MULT_FLIGHT
+    elif day in TRAVEL_ABROAD_DAYS:
+        steps_mult = TRAVEL_STEPS_MULT_ABROAD
+    else:
+        steps_mult = 1.0
+
+    return DayEffect(
+        rhr=TRAVEL_RHR * intensity,
+        log_rmssd=TRAVEL_LOG_RMSSD * intensity,
+        sleep_efficiency=TRAVEL_SLEEP_EFFICIENCY * intensity,
+        sleep_duration=TRAVEL_SLEEP_DURATION * intensity,
+        sleep_onset=onset_shift * intensity,
+        respiratory=TRAVEL_RESPIRATORY * intensity,
+        temp_deviation=TRAVEL_TEMP * intensity,
+        energy=TRAVEL_ENERGY * intensity,
+        steps_mult=steps_mult,
+    )
 
 
 def detraining_effect(day: int) -> DayEffect:

@@ -123,7 +123,7 @@ hooks, skills и автоматизация разработки.
 
 | Файл | О чём |
 |---|---|
-| [`expected-patterns.md`](expected-patterns.md) | Восемь паттернов: гипотеза, механизм, ожидаемый эффект в числах, критерий обнаружения и то, чем ошибётся наивный анализ |
+| [`expected-patterns.md`](expected-patterns.md) | Десять паттернов: гипотеза, механизм, ожидаемый эффект в числах, критерий обнаружения и то, чем ошибётся наивный анализ |
 | [`canonical-format.md`](canonical-format.md) | Формат слоя приёма и семь решений, которые он фиксирует; контракт адаптера |
 | `synth/` | Канонический слой, контракт адаптера и генератор как первый адаптер |
 
@@ -133,7 +133,7 @@ hooks, skills и автоматизация разработки.
 python -m synth.cli --age 38 --weeks 16 --seed 42 --out data/
 
 python tools/validate.py data/synth-0001/observations.jsonl   # соответствие формату
-python tools/check_patterns.py data/synth-0001/               # PASS/FAIL по P-01…P-08
+python tools/check_patterns.py data/synth-0001/               # PASS/FAIL по P-01…P-10
 ```
 
 Один seed даёт побайтово один и тот же файл. Возраст задаётся параметром, и от него
@@ -148,6 +148,3 @@ python tools/check_patterns.py data/synth-0001/               # PASS/FAIL по P
 Карточка паттерна в `expected-patterns.md` и код генератора меняются одним коммитом:
 `tools/check_patterns.py` исполняет критерии из карточек, поэтому разошедшийся документ
 сразу делает проверку красной.
-
-> Каталог `health-data/` решает ту же задачу другой реализацией. Две ветки делались
-> параллельно; какую оставить — открытый вопрос, см. PR #2.

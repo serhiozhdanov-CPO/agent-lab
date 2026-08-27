@@ -123,6 +123,7 @@ class Dataset:
         self.by_vendor: dict[str, dict[str, Series]] = {}
         self.timezones: dict[int, str] = {}
         self.methods: dict[str, set[tuple[str, str]]] = {}
+        self.confidence: dict[str, dict[str, dict[int, float]]] = {}
         for rec in read_jsonl(os.path.join(directory, "observations.jsonl")):
             day = (date.fromisoformat(rec["effective_date"]) - self.start).days
             vendor = rec["source"]["vendor"]
@@ -132,6 +133,9 @@ class Dataset:
             self.timezones.setdefault(day, rec["timezone"])
             self.methods.setdefault(rec["metric"], set()).add(
                 (rec["method"], rec["method_detail"]))
+            conf = rec.get("quality", {}).get("confidence")
+            if conf is not None:
+                self.confidence.setdefault(rec["metric"], {}).setdefault(vendor, {})[day] = conf
 
     def s(self, metric: str) -> Series:
         return self.series.get(metric, {})
@@ -610,6 +614,62 @@ def check_p11(ds: Dataset) -> list[Result]:
     return out
 
 
+# P-12. Окно, в котором приложение второго источника писало шаги обратно
+# в хранилище первого и часть шагов учитывалась дважды.
+STEPS_OVERLAP = range(84, 112)
+
+
+def check_p12(ds: Dataset) -> list[Result]:
+    primary = ds.by_vendor.get("activity.steps", {}).get("synthetic", {})
+    ring = ds.by_vendor.get("activity.steps", {}).get("sber_ring", {})
+    both = sorted(set(primary) & set(ring))
+    out: list[Result] = []
+
+    def ratio(lo: int, hi: int) -> float:
+        pairs = [(primary[d], ring[d]) for d in both if lo <= d <= hi and ring[d]]
+        return mean([p / q for p, q in pairs]) if pairs else float("nan")
+
+    during = ratio(STEPS_OVERLAP.start, ds.days - 1)
+    before = ratio(0, STEPS_OVERLAP.start - 1)
+    out.append((
+        "шаги основного источника завышены относительно кольца только в окне перекрытия",
+        during >= 1.10 and 0.95 <= before <= 1.05,
+        f"в окне {during:.3f}, до него {before:.3f}",
+    ))
+
+    # Сравнение ПАРНОЕ: у отношения общий шум шагов сокращается, остаётся
+    # только завышение. Сравнивать наклоны двух рядов по отдельности нельзя —
+    # кольцо присылает около десятка дней за окно, и его наклон целиком шум.
+    mid = STEPS_OVERLAP.start + len(STEPS_OVERLAP) // 2
+    first = ratio(STEPS_OVERLAP.start, mid - 1)
+    second = ratio(mid, ds.days - 1)
+    growth = second - first
+    out.append((
+        "завышение нарастает внутри окна: отношение растёт на ≥ 0.05 от первой половины ко второй",
+        growth >= 0.05,
+        f"первая половина {first:.3f}, вторая {second:.3f}, прирост {growth:+.3f}",
+    ))
+
+    # Признак «активные килокалории не растут пропорционально» здесь в критерии
+    # не вынесен. Он настоящий: килокалории считаются от ИСТИННЫХ шагов, и
+    # завышение за собой их не тянет. Но истинный наклон шагов в этом окне
+    # даёт около 0.25 ккал/день, а шум активных килокалорий на 28 днях с
+    # автокоррелированной основой — порядка 2 ккал/день. Сигнал есть, измерить
+    # его на этом объёме нельзя, и делать из него порог значило бы утверждать
+    # то, что данные не выдерживают.
+    lo, hi = STEPS_OVERLAP.start, STEPS_OVERLAP.stop - 1
+    conf = ds.confidence.get("activity.steps", {}).get("synthetic", {})
+    flagged = [d for d in range(lo, hi + 1) if conf.get(d, 1.0) <= 0.8]
+    clean = [d for d in range(ds.days) if d not in STEPS_OVERLAP and conf.get(d, 1.0) <= 0.8]
+    present = [d for d in range(lo, hi + 1) if d in primary]
+    out.append((
+        "завышенные строки помечены пониженной уверенностью, и только они",
+        len(flagged) == len(present) and not clean,
+        f"помечено {len(flagged)} из {len(present)} дней окна, вне окна {len(clean)}",
+    ))
+    return out
+
+
 CHECKS = [
     ("P-01", "Недельный ритм и социальный джетлаг", check_p01),
     ("P-02", "Возрастные базовые линии и связка пульс↔вариабельность", check_p02),
@@ -622,6 +682,7 @@ CHECKS = [
     ("P-09", "Смена часового пояса в поездке", check_p09),
     ("P-10", "Негативные контроли", check_p10),
     ("P-11", "Ненаблюдаемый хвост события", check_p11),
+    ("P-12", "Ложный тренд от перекрытия источников", check_p12),
 ]
 
 

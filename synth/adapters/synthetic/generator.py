@@ -43,6 +43,21 @@ RING_LOG_PROB = 0.45
 # это не пропуски, и считать покрытие кольца от начала периода нельзя.
 RING_ACTIVE_FROM_DAY = 56
 
+# P-12. Пока кольцо подключено, его приложение пишет шаги обратно в хранилище
+# основного устройства, и часть шагов учитывается дважды. Завышение нарастает
+# от нуля до максимума и обрывается ступенькой, когда обратную запись чинят.
+# Настоящей активности за этим «трендом» нет: кольцо всё это время отдаёт
+# правильные шаги, а активные килокалории считаются от истинного значения.
+# Окно взято в последние четыре недели намеренно: там нет ни одного события,
+# трогающего шаги, поэтому артефакт измеряется чисто. Дни 56–83, когда кольцо
+# уже подключено, а обратной записи ещё нет, служат окном сравнения.
+STEPS_OVERLAP_DAYS = range(84, 112)
+STEPS_OVERLAP_MAX_INFLATION = 0.25
+STEPS_OVERLAP_CONFIDENCE = 0.70
+# У кольца свой приборный шум: без него отношение двух рядов было бы
+# детерминированным и артефакт опознавался бы слишком легко.
+RING_STEPS_CV = 0.03
+
 # Как получено каждое значение. Пара (metric, method_detail) — условие
 # сопоставимости: складывать в один ряд можно только значения с одинаковой
 # парой. Кольцо ниже пишет тот же hr.resting, но со СВОИМ method_detail —
@@ -141,6 +156,7 @@ class DayRecord:
     sleep_end: datetime | None = None
     debt_hours: float = 0.0
     fitness: float = 0.0
+    steps_inflation: float = 0.0
 
 
 def _stream(seed: int, name: str) -> random.Random:
@@ -314,8 +330,20 @@ class SyntheticAdapter:
 
             weight += WEIGHT_DRIFT_KG / n + rng_weight.gauss(0.0, WEIGHT_SD) * 0.35
 
+            # Завышение накладывается на ВЫДАЧУ основного источника, а не на
+            # величину: активные килокалории и всё остальное считаются от
+            # истинных шагов — иначе артефакт стал бы неотличим от активности.
+            if d in STEPS_OVERLAP_DAYS:
+                progress = (d - STEPS_OVERLAP_DAYS.start) / (len(STEPS_OVERLAP_DAYS) - 1)
+                # Ненулевое стартовое значение: строка испорчена самим фактом
+                # двойной записи, а не величиной завышения в конкретный день.
+                inflation = STEPS_OVERLAP_MAX_INFLATION * (0.15 + 0.85 * progress)
+            else:
+                inflation = 0.0
+
             rec = DayRecord(day=d, day_date=dates[d], weekday=weekday, debt_hours=debt,
-                            fitness=fitness, timezone=day_tz_name)
+                            fitness=fitness, timezone=day_tz_name,
+                            steps_inflation=inflation)
             # Полночь МЕСТНАЯ: во время поездки это полночь другого пояса, и
             # именно от неё отсчитывается sleep.onset.
             midnight = datetime.combine(dates[d], datetime.min.time(), tzinfo=day_tz)
@@ -377,6 +405,10 @@ class SyntheticAdapter:
                 nightly = metric in ("hrv.rmssd", "respiratory.rate", "body.temp_deviation",
                                      "hr.resting", "sleep.duration", "sleep.efficiency")
                 method, method_detail = METHOD_BY_METRIC[metric]
+                confidence = 0.93 if nightly else None
+                if metric == "activity.steps" and rec.steps_inflation:
+                    value = round(value * (1.0 + rec.steps_inflation), 0)
+                    confidence = STEPS_OVERLAP_CONFIDENCE
                 out.append(Observation(
                     subject_id=cfg.subject_id,
                     metric=metric,
@@ -388,7 +420,7 @@ class SyntheticAdapter:
                     method_detail=method_detail,
                     effective_start=rec.sleep_start if nightly else None,
                     effective_end=rec.sleep_end if nightly else None,
-                    confidence=0.93 if nightly else None,
+                    confidence=confidence,
                 ))
 
             # P-10: второй вендор за тот же день. Ключ дедупликации включает
@@ -409,6 +441,20 @@ class SyntheticAdapter:
                     method=RING_RHR_METHOD[0],
                     method_detail=RING_RHR_METHOD[1],
                     confidence=0.88,
+                ))
+                # Шаги с кольца — истинные. Именно их отношение к шагам
+                # основного источника и выдаёт двойной учёт (P-12).
+                out.append(Observation(
+                    subject_id=cfg.subject_id,
+                    metric="activity.steps",
+                    value=round(rec.values["activity.steps"]
+                                * (1.0 + rng_ring.gauss(0.0, RING_STEPS_CV)), 0),
+                    effective_date=rec.day_date,
+                    timezone=rec.timezone,
+                    source=ring_source,
+                    method=AGGREGATED,
+                    method_detail="ring_sum_local_day",
+                    confidence=0.90,
                 ))
 
             panel = panels_by_day.get(rec.day)
@@ -576,6 +622,13 @@ class SyntheticAdapter:
                     "east_profile": list(ev.TRAVEL_EAST_PROFILE),
                     "west_profile": list(ev.TRAVEL_WEST_PROFILE),
                     "asymmetry": "перелёт на восток переносится тяжелее возврата на запад",
+                },
+                {
+                    "id": "P-12", "name": "Ложный тренд от перекрытия источников",
+                    "overlap_days": [STEPS_OVERLAP_DAYS.start, STEPS_OVERLAP_DAYS.stop - 1],
+                    "max_inflation": STEPS_OVERLAP_MAX_INFLATION,
+                    "true_activity_trend": "нет — активность за завышением не растёт",
+                    "diagnostic": "отношение шагов основного источника к шагам кольца",
                 },
                 {
                     "id": "P-10", "name": "Негативные контроли",

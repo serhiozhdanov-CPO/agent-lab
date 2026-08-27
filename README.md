@@ -123,7 +123,7 @@ hooks, skills и автоматизация разработки.
 
 | Файл | О чём |
 |---|---|
-| [`expected-patterns.md`](expected-patterns.md) | Одиннадцать паттернов: гипотеза, механизм, ожидаемый эффект в числах, критерий обнаружения и то, чем ошибётся наивный анализ |
+| [`expected-patterns.md`](expected-patterns.md) | Двенадцать паттернов: гипотеза, механизм, ожидаемый эффект в числах, критерий обнаружения и то, чем ошибётся наивный анализ |
 | [`canonical-format.md`](canonical-format.md) | Формат слоя приёма и восемь решений, которые он фиксирует; контракт адаптера и таблицы маппинга Apple Health, WHOOP и кольца Сбера |
 | `synth/` | Канонический слой, контракт адаптера и генератор как первый адаптер |
 
@@ -133,7 +133,7 @@ hooks, skills и автоматизация разработки.
 python -m synth.cli --age 38 --weeks 16 --seed 42 --out data/
 
 python tools/validate.py data/synth-0001/observations.jsonl   # соответствие формату
-python tools/check_patterns.py data/synth-0001/               # PASS/FAIL по P-01…P-11
+python tools/check_patterns.py data/synth-0001/               # PASS/FAIL по P-01…P-12
 ```
 
 Один seed даёт побайтово один и тот же файл. Возраст задаётся параметром, и от него

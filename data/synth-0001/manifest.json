@@ -15,9 +15,10 @@
       "unit": "kcal"
     },
     {
-      "count": 103,
-      "coverage": 0.9196,
+      "count": 122,
+      "coverage": 1.0893,
       "methods": [
+        "aggregated:ring_sum_local_day",
         "aggregated:sum_local_day"
       ],
       "metric": "activity.steps",
@@ -211,9 +212,9 @@
       "vendor": "lab"
     },
     {
-      "active_days": 54,
+      "active_days": 52,
       "active_from": "2026-03-04",
-      "active_to": "2026-04-26",
+      "active_to": "2026-04-24",
       "vendor": "sber_ring"
     },
     {
@@ -235,5 +236,5 @@
     "timezone": "Europe/Moscow"
   },
   "subject_id": "synth-0001",
-  "total_observations": 1554
+  "total_observations": 1573
 }

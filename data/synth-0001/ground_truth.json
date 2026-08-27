@@ -1,0 +1,285 @@
+{
+  "note": "Ключ ответов для оценки аналитики. Аналитика не должна его читать.",
+  "patterns": [
+    {
+      "id": "P-01",
+      "late_night_wake_days": [
+        5,
+        6
+      ],
+      "name": "Недельный ритм и социальный джетлаг",
+      "rhr_by_weekday_mon_to_sun": [
+        3.0,
+        0.8,
+        0.0,
+        0.0,
+        0.0,
+        0.5,
+        1.0
+      ],
+      "sleep_duration_weekend_shift_min": 25.0,
+      "sleep_efficiency_weekend_shift_pp": -2.0,
+      "sleep_onset_weekend_shift_min": 55.0
+    },
+    {
+      "age": 38.0,
+      "autonomic_loadings": {
+        "hr.resting": 1.8,
+        "ln(hrv.rmssd)": -0.22
+      },
+      "expected_rhr_for_age": 60.56,
+      "expected_rmssd_for_age": 47.75,
+      "id": "P-02",
+      "name": "Возрастные базовые линии и связка пульс↔вариабельность",
+      "subject_rhr_baseline": 61.27,
+      "subject_rmssd_baseline": 47.44
+    },
+    {
+      "evenings": [
+        {
+          "date": "2026-01-09",
+          "day": 4,
+          "units": 5.0
+        },
+        {
+          "date": "2026-01-24",
+          "day": 19,
+          "units": 5.5
+        },
+        {
+          "date": "2026-01-28",
+          "day": 23,
+          "units": 5.0
+        },
+        {
+          "date": "2026-02-16",
+          "day": 42,
+          "units": 5.5
+        },
+        {
+          "date": "2026-02-20",
+          "day": 46,
+          "units": 3.5
+        },
+        {
+          "date": "2026-02-28",
+          "day": 54,
+          "units": 6.0
+        },
+        {
+          "date": "2026-04-01",
+          "day": 86,
+          "units": 3.0
+        },
+        {
+          "date": "2026-04-03",
+          "day": 88,
+          "units": 3.0
+        },
+        {
+          "date": "2026-04-10",
+          "day": 95,
+          "units": 5.0
+        },
+        {
+          "date": "2026-04-13",
+          "day": 98,
+          "units": 2.5
+        },
+        {
+          "date": "2026-04-25",
+          "day": 110,
+          "units": 6.0
+        }
+      ],
+      "id": "P-03",
+      "lag_days": 1,
+      "name": "Алкогольные вечера: лаговый след"
+    },
+    {
+      "acute_dates": [
+        "2026-03-08",
+        "2026-03-09",
+        "2026-03-10",
+        "2026-03-11"
+      ],
+      "acute_days": [
+        62,
+        63,
+        64,
+        65
+      ],
+      "id": "P-04",
+      "name": "Окно острой болезни",
+      "overshoot_days": [
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82
+      ],
+      "peak_day": 63,
+      "peak_hr_delta": 12.0,
+      "recovery_tau_days": 3.5
+    },
+    {
+      "block_days": [
+        35,
+        55
+      ],
+      "fitness_tau_days": 16.0,
+      "id": "P-05",
+      "load_multiplier": 0.3,
+      "name": "Блок детренированности",
+      "worst_fitness_day": 56
+    },
+    {
+      "id": "P-06",
+      "max_debt_hours": 9.29,
+      "name": "Накопленный недосып",
+      "same_day_duration_coefficient": 0.0,
+      "short_sleep_blocks": [
+        [
+          14,
+          20
+        ],
+        [
+          84,
+          97
+        ]
+      ],
+      "window_days": 7
+    },
+    {
+      "confounded_days": [
+        63
+      ],
+      "draw_dates": [
+        "2026-01-08",
+        "2026-01-29",
+        "2026-02-25",
+        "2026-03-09",
+        "2026-04-03",
+        "2026-04-24"
+      ],
+      "draw_days": [
+        3,
+        24,
+        51,
+        63,
+        88,
+        109
+      ],
+      "ferritin_true_at_draws": [
+        80.9,
+        73.1,
+        63.2,
+        58.7,
+        49.5,
+        41.7
+      ],
+      "flat_markers": [
+        "lab.hba1c",
+        "lab.tsh"
+      ],
+      "id": "P-07",
+      "name": "Связность лабораторного ряда и искажённый замер"
+    },
+    {
+      "abroad_dates": [
+        "2026-01-30",
+        "2026-01-31",
+        "2026-02-01",
+        "2026-02-02",
+        "2026-02-03"
+      ],
+      "abroad_days": [
+        25,
+        26,
+        27,
+        28,
+        29
+      ],
+      "asymmetry": "перелёт на восток переносится тяжелее возврата на запад",
+      "away_timezone": "Asia/Shanghai",
+      "east_profile": [
+        0.55,
+        0.9,
+        1.0,
+        0.95,
+        0.85
+      ],
+      "home_timezone": "Europe/Moscow",
+      "id": "P-09",
+      "name": "Смена часового пояса в поездке",
+      "return_days": [
+        30,
+        31,
+        32,
+        33,
+        34
+      ],
+      "west_profile": [
+        0.7,
+        0.35,
+        0.15,
+        0.05,
+        0.02
+      ]
+    },
+    {
+      "diagnostic": "отношение шагов основного источника к шагам кольца",
+      "id": "P-12",
+      "max_inflation": 0.25,
+      "name": "Ложный тренд от перекрытия источников",
+      "overlap_days": [
+        84,
+        111
+      ],
+      "true_activity_trend": "нет — активность за завышением не растёт"
+    },
+    {
+      "empty_week_dates": [
+        "2026-01-12",
+        "2026-01-13",
+        "2026-01-14",
+        "2026-01-15",
+        "2026-01-16",
+        "2026-01-17",
+        "2026-01-18"
+      ],
+      "empty_week_days": [
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13
+      ],
+      "id": "P-10",
+      "name": "Негативные контроли",
+      "second_vendor": "sber_ring",
+      "second_vendor_is_calibration_not_physiology": true,
+      "second_vendor_rhr_offset": 1.4,
+      "steps_ar_phi": 0.55
+    },
+    {
+      "forced_gap_days": [
+        71,
+        72,
+        73
+      ],
+      "id": "P-08",
+      "mechanism": "MCAR",
+      "name": "Порог различимости",
+      "resolution_threshold_bpm": 1.5,
+      "wearable_drop_prob": 0.07
+    }
+  ],
+  "schema_version": "1.0",
+  "source_document": "expected-patterns.md",
+  "subject_id": "synth-0001"
+}

@@ -1,0 +1,240 @@
+{
+  "generator": {
+    "name": "synth",
+    "seed": 42,
+    "version": "0.1.0"
+  },
+  "metrics": [
+    {
+      "count": 103,
+      "coverage": 0.9196,
+      "methods": [
+        "aggregated:sum_local_day"
+      ],
+      "metric": "activity.active_energy",
+      "unit": "kcal"
+    },
+    {
+      "count": 122,
+      "coverage": 1.0893,
+      "methods": [
+        "aggregated:ring_sum_local_day",
+        "aggregated:sum_local_day"
+      ],
+      "metric": "activity.steps",
+      "unit": "count"
+    },
+    {
+      "count": 103,
+      "coverage": 0.9196,
+      "methods": [
+        "derived:deviation_from_30d_baseline"
+      ],
+      "metric": "body.temp_deviation",
+      "unit": "degC"
+    },
+    {
+      "count": 52,
+      "coverage": 0.4643,
+      "methods": [
+        "measured:scale_sync"
+      ],
+      "metric": "body.weight",
+      "unit": "kg"
+    },
+    {
+      "count": 112,
+      "coverage": 1.0,
+      "methods": [
+        "measured:self_report"
+      ],
+      "metric": "context.alcohol_units",
+      "unit": "unit"
+    },
+    {
+      "count": 103,
+      "coverage": 0.9196,
+      "methods": [
+        "derived:daily_peak_hr"
+      ],
+      "metric": "hr.max_daily",
+      "unit": "bpm"
+    },
+    {
+      "count": 122,
+      "coverage": 1.0893,
+      "methods": [
+        "measured:night_min_hr",
+        "measured:ring_night_min_hr"
+      ],
+      "metric": "hr.resting",
+      "unit": "bpm"
+    },
+    {
+      "count": 103,
+      "coverage": 0.9196,
+      "methods": [
+        "measured:rmssd_night_average"
+      ],
+      "metric": "hrv.rmssd",
+      "unit": "ms"
+    },
+    {
+      "count": 6,
+      "coverage": 0.0536,
+      "methods": [
+        "measured:lab_assay"
+      ],
+      "metric": "lab.crp",
+      "unit": "mg/L"
+    },
+    {
+      "count": 6,
+      "coverage": 0.0536,
+      "methods": [
+        "measured:lab_assay"
+      ],
+      "metric": "lab.ferritin",
+      "unit": "ng/mL"
+    },
+    {
+      "count": 6,
+      "coverage": 0.0536,
+      "methods": [
+        "measured:lab_assay"
+      ],
+      "metric": "lab.hba1c",
+      "unit": "pct"
+    },
+    {
+      "count": 6,
+      "coverage": 0.0536,
+      "methods": [
+        "measured:lab_assay"
+      ],
+      "metric": "lab.hemoglobin",
+      "unit": "g/L"
+    },
+    {
+      "count": 6,
+      "coverage": 0.0536,
+      "methods": [
+        "measured:lab_assay"
+      ],
+      "metric": "lab.tsh",
+      "unit": "mIU/L"
+    },
+    {
+      "count": 6,
+      "coverage": 0.0536,
+      "methods": [
+        "measured:lab_assay"
+      ],
+      "metric": "lab.vitamin_d",
+      "unit": "ng/mL"
+    },
+    {
+      "count": 103,
+      "coverage": 0.9196,
+      "methods": [
+        "measured:night_average"
+      ],
+      "metric": "respiratory.rate",
+      "unit": "brpm"
+    },
+    {
+      "count": 103,
+      "coverage": 0.9196,
+      "methods": [
+        "measured:stage_summary"
+      ],
+      "metric": "sleep.duration",
+      "unit": "min"
+    },
+    {
+      "count": 103,
+      "coverage": 0.9196,
+      "methods": [
+        "derived:time_asleep_over_time_in_bed"
+      ],
+      "metric": "sleep.efficiency",
+      "unit": "pct"
+    },
+    {
+      "count": 103,
+      "coverage": 0.9196,
+      "methods": [
+        "measured:sleep_boundaries"
+      ],
+      "metric": "sleep.offset",
+      "unit": "min_from_midnight"
+    },
+    {
+      "count": 103,
+      "coverage": 0.9196,
+      "methods": [
+        "measured:sleep_boundaries"
+      ],
+      "metric": "sleep.onset",
+      "unit": "min_from_midnight"
+    },
+    {
+      "count": 99,
+      "coverage": 0.8839,
+      "methods": [
+        "measured:self_report"
+      ],
+      "metric": "subjective.energy",
+      "unit": "score_1_5"
+    },
+    {
+      "count": 103,
+      "coverage": 0.9196,
+      "methods": [
+        "derived:session_load_v1"
+      ],
+      "metric": "workout.load",
+      "unit": "au"
+    }
+  ],
+  "period": {
+    "days": 112,
+    "end": "2026-04-26",
+    "start": "2026-01-05",
+    "weeks": 16
+  },
+  "schema_version": "1.0",
+  "sources": [
+    {
+      "active_days": 107,
+      "active_from": "2026-01-08",
+      "active_to": "2026-04-24",
+      "vendor": "lab"
+    },
+    {
+      "active_days": 52,
+      "active_from": "2026-03-04",
+      "active_to": "2026-04-24",
+      "vendor": "sber_ring"
+    },
+    {
+      "active_days": 112,
+      "active_from": "2026-01-05",
+      "active_to": "2026-04-26",
+      "vendor": "synthetic"
+    }
+  ],
+  "subject": {
+    "age": 38.0,
+    "baselines": {
+      "hr.max": 181.4,
+      "hr.resting": 61.27,
+      "hrv.rmssd": 47.44,
+      "respiratory.rate": 14.28,
+      "sleep_need_min": 440.2
+    },
+    "timezone": "Europe/Moscow"
+  },
+  "subject_id": "synth-0001",
+  "total_observations": 1573
+}
